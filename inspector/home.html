@@ -1,0 +1,30 @@
+<html>
+
+<head>
+    <title></title>
+</head>
+
+<body>
+    <table>
+        <tbody>
+            <tr>
+                <th>Server code</th>
+                <th>Mem address</th>
+            </tr>
+            {% for server in servers %}
+            {% block server %}
+            <tr>
+                <td>
+                    <a href="inspect/{{server.code}}">
+                        {{server.code}}
+                    </a>
+                </td>
+                <td>{{hex(id(server))}}</td>
+            </tr>
+            {% end %}
+            {% end %}
+        </tbody>
+    </table>
+</body>
+
+</html>
