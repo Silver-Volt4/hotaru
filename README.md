@@ -1,5 +1,5 @@
-<p align="center">
-  <img src=".gh-assets/hotaru.png">
+<p>
+  <img width="256px" src=".gh-assets/hotaru.png">
 </p>
 
 # Hotaru
