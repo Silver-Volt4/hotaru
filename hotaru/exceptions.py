@@ -1,3 +1,9 @@
+"""
+This is just a holder for returning error codes and whatnot.
+Because .close(code=ServerCodeDoesntExist()) makes more sense than .close(code=4000)
+"""
+
+
 def ServerCodeDoesntExist():
     return 4000 + 0
 

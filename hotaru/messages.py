@@ -1,16 +1,16 @@
 from hotaru.players import Player
 
 """
-{"type": "repeated", "start": actualMessage, "repeat": n}
-{"type": "userjoin", "user": cmd[1]}
-{"type": "userleft", "user": cmd[1]}
-{"type": "userappend", "user": cmd[1]}
-{"type": "su", "su": ""}
-{"type": "msg", "from": author, "am": actualMessage["content"]}
+Holder classes for all message types we currently support.
 """
 
 
 class RawMessage:
+    """
+    Class for user-sent messages, these are always
+    from someone else, not Hotaru itself
+    """
+
     def __init__(self, from_: Player, message_content):
         self.from_ = from_
         self.message_content = message_content
@@ -24,6 +24,12 @@ class RawMessage:
 
 
 class UserAppend:
+    """
+    Sent to the owner when a player enters the game for the first time,
+    their name should be appended to some kind of dictionary
+    on the server owner's end
+    """
+
     def __init__(self, user: Player):
         self.user = user
 
@@ -35,6 +41,11 @@ class UserAppend:
 
 
 class UserJoin:
+    """
+    Sent to the owner when an already registered player joins the game back,
+    presumably after being disconnected or when switching devices
+    """
+
     def __init__(self, user: Player):
         self.user = user
 
@@ -46,6 +57,11 @@ class UserJoin:
 
 
 class UserLeft:
+    """
+    Sent to the owner when an already registered player disconnects abnormally,
+    presumably after network problems
+    """
+
     def __init__(self, user: Player):
         self.user = user
 
@@ -57,6 +73,11 @@ class UserLeft:
 
 
 class Su:
+    """
+    Sent to every newly registered player, this code is used for
+    authentication later on, for instance when reconnecting
+    """
+
     def __init__(self, su: str):
         self.su = su
 
@@ -68,6 +89,15 @@ class Su:
 
 
 class ShadowOfMessage:
+    """
+    This type of message is never sent directly, rather, it's a part
+    of a "repeat" packet. They are messages sent by a player to Hotaru.
+
+    Example usage would be in a chat app, where normal messages
+    were sent by other players, and shadows were sent by you.
+    One could rebuild the chat log like this.
+    """
+
     def __init__(self, to, content):
         self.to = to
         self.content = content

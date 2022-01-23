@@ -4,7 +4,7 @@ import os
 
 from hotaru import Hotaru
 
-LOGGING = False
+LOGGING = False # Currently has no effect.
 ENABLE_INSPECT = True
 
 
