@@ -32,7 +32,7 @@ class Hotaru(tornado.web.Application):
     Main object for the Tornado server.
     """
 
-    def __init__(self, logging, inspect):
+    def __init__(self, do_inspect):
         # A reference to this object is passed to all handlers.
         # The ServerPool object holds Server objects, which hold Player objects.
         # This allows to have separate ServerPools on different endpoints,
@@ -41,16 +41,32 @@ class Hotaru(tornado.web.Application):
 
         handlers = [
             ("/ws/(.*)", HotaruWebsocket,
-             {"pool": self.pool, "log": logging}),
+             {"pool": self.pool}),
             ("/hotaru/(.*)",   HotaruCommands,
-             {"pool": self.pool, "log": logging}),
+             {"pool": self.pool}),
         ]
-        if inspect:
+        if do_inspect:
             handlers.append(
                 ("/inspect(.*)", HotaruInspector,
-                 {"pool": self.pool, "log": logging})
+                 {"pool": self.pool})
             )
+
+        handlers.append(
+            ("/(.*)", HotaruLanding)
+        )
         super().__init__(handlers)
+
+###          ###
+### HANDLERS ###
+###          ###
+
+
+class HotaruLanding(tornado.web.RequestHandler):
+    def initialize(self):
+        self.land = tornado.template.Loader("./inspector")
+
+    def get(self, input):
+        self.write(self.land.load("landingpage.html").generate())
 
 
 class HotaruInspector(tornado.web.RequestHandler):
@@ -69,6 +85,9 @@ class HotaruInspector(tornado.web.RequestHandler):
         self.set_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
 
     def get(self, cmd):
+        logging.debug("Handling request HotaruInspector/" +
+                      self.request.path.split)
+
         if not cmd.startswith("/"):
             cmd = "/" + cmd
         cmd = cmd.split("/")[1:]
@@ -81,7 +100,7 @@ class HotaruInspector(tornado.web.RequestHandler):
         else:
             serv = self.pool.get_server_safe(cmd[0])
             if serv:
-                pass
+                pass #TODO
             else:
                 self.set_status(404)
                 self.write("Not found")
@@ -90,7 +109,7 @@ class HotaruInspector(tornado.web.RequestHandler):
 class HotaruCommands(tornado.web.RequestHandler):
     """
     Object for the /hotaru endpoint.
-    This is where apps ask for new servers, deleting them...
+    This is where apps ask for new servers, delete them...
     """
 
     def initialize(self, pool):
@@ -102,6 +121,7 @@ class HotaruCommands(tornado.web.RequestHandler):
         self.set_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
 
     def get(self, cmd):
+        logging.debug("Handling request HotaruCommands/" + cmd)
         # This might not be the best way to do it, but whatever...
         cmd = cmd.split("/")
 
@@ -124,6 +144,7 @@ class HotaruCommands(tornado.web.RequestHandler):
             server = self.pool.create_server(limit, prefix)
             game_code = server.code
             su = server.su
+            logging.info(f"Created new Server: {game_code}")
             self.write("\n".join((game_code[-4:], su)))
 
         if cmd[0] == "close_room":
@@ -134,6 +155,7 @@ class HotaruCommands(tornado.web.RequestHandler):
             if server:
                 if server.su == cmd[2]:
                     server.close_server()
+                    logging.info(f"Closed server: {server.code}")
                     self.pool.free(server.code)
                     self.set_status(200)
                     self.write("OK")
@@ -189,6 +211,8 @@ class HotaruWebsocket(tornado.websocket.WebSocketHandler):
         return command
 
     def open(self, client):
+        logging.debug("Handling request HotaruCommands/" +
+                      self.request.path.split)
         cmd = self.parse_cmd(self.request.path.split("/")[2:])
 
         # Check for errors in the connection and kick the client if necessary

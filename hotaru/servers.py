@@ -1,3 +1,4 @@
+import logging
 from hotaru import exceptions
 from hotaru.players import Player
 import uuid
@@ -52,12 +53,16 @@ class Server(Player):
         self.lock = False
         self.limit = limit
 
+        logging.debug(f"Initialized new Server instance: {self.code}")
+
     # Add a Player to the PlayerPool
     def add_user(self, player: Player):
         if not player.name in self.players:
             self.players[player.name] = player
+            logging.debug(f"Server {self.code} adds new player {player}")
         else:
-            pass  # TODO: throw error
+            logging.error(
+                f"Server {self.code} tried to add player {player} but the name is taken. Did an earlier check fail?")
 
     # Check for a Player in PlayerPool, return None if not found
     def has_player_safe(self, player_name):
@@ -68,11 +73,14 @@ class Server(Player):
 
     # Disconnect everyone and send a specific close code
     def close_server(self):
+        logging.debug(f"Server {self.code} closes all connections")
+
         for player in self.players.list():
             try:
                 player.client.close(exceptions.ServerClosing())
             except:
-                pass
+                logging.debug(
+                    f"Couldn't close connection with {player.name}, the user is likely away.")
         self.client.close(exceptions.ServerClosing())
 
 
@@ -110,6 +118,7 @@ class ServerPool:
 
     def free(self, server):
         if not server in self.pool:
-            raise Exception
+            logging.error(
+                f"ServerPool tried to free {server}, but this server is not present. Did an earlier check fail?")
         else:
             self.pool.pop(server)

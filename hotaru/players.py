@@ -2,9 +2,12 @@ from hotaru import messages
 import uuid
 import json
 
+import logging
+
 """
 Class for handling connected players.
 """
+
 
 class Player:
     def __init__(self, name: str, client):
@@ -30,7 +33,7 @@ class Player:
         self.next += 1
         self.messages.append(message)
 
-    # This is used when THIS PLAYER sends something to someone else 
+    # This is used when THIS PLAYER sends something to someone else
     def sends_message(self, to, content, shadowless=False):
         # This is how we identify that we're dealing with a PlayerPool object
         if to.name == 2:
@@ -53,6 +56,8 @@ class Player:
     # This is what generates a repeat, or in other words, a log of everything sent
     # from and to this player. It's used for packet losses, reconnecting, and so on
     def generate_repeat(self, expected_next):
+        logging.debug(
+            f"Generating repeat packet for {self.name}; Next expected packet is {expected_next}")
         looped_real_messages = 0
         caret = 0
 
