@@ -1,4 +1,4 @@
-<p>
+<p align="center">
   <img width="500px" src=".github/hotaru.png">
 </p>
 
