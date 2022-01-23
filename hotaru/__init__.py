@@ -86,7 +86,7 @@ class HotaruInspector(tornado.web.RequestHandler):
 
     def get(self, cmd):
         logging.debug("Handling request HotaruInspector/" +
-                      self.request.path.split)
+                      self.request.path)
 
         if not cmd.startswith("/"):
             cmd = "/" + cmd
@@ -100,7 +100,7 @@ class HotaruInspector(tornado.web.RequestHandler):
         else:
             serv = self.pool.get_server_safe(cmd[0])
             if serv:
-                pass #TODO
+                pass  # TODO
             else:
                 self.set_status(404)
                 self.write("Not found")
@@ -212,7 +212,7 @@ class HotaruWebsocket(tornado.websocket.WebSocketHandler):
 
     def open(self, client):
         logging.debug("Handling request HotaruCommands/" +
-                      self.request.path.split)
+                      self.request.path)
         cmd = self.parse_cmd(self.request.path.split("/")[2:])
 
         # Check for errors in the connection and kick the client if necessary
