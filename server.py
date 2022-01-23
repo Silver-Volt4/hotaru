@@ -9,7 +9,7 @@ ENABLE_INSPECT = True
 
 
 def main():
-    app = Hotaru(log=LOGGING, inspect=ENABLE_INSPECT)
+    app = Hotaru(logging=LOGGING, inspect=ENABLE_INSPECT)
     port = os.environ.get("PORT")
     if not port:
         port = 8000
