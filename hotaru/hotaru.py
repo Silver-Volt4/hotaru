@@ -11,6 +11,8 @@ from hotaru.players import Player
 import logging
 import json
 
+HT_VERSION = "v0"
+
 
 class Hotaru(tornado.web.Application):
     """
@@ -26,7 +28,7 @@ class Hotaru(tornado.web.Application):
         self.html = tornado.template.Loader("./html")
 
         handlers = [
-            ("/ws(.*)", HotaruWebsocket),
+            ("/ws/(.*)", HotaruWebsocket),
             ("/hotaru/(.*)",   HotaruCommands)
         ]
 
@@ -91,6 +93,11 @@ class HotaruCommands(tornado.web.RequestHandler):
 
     def prepare(self):
         logging.debug("Handling request HotaruCommands/" + self.path_args[0])
+        if not self.path_args[0].startswith(HT_VERSION + "/"):
+            self.set_status(400)
+            self.write({
+                "error": "version incompatible"
+            })
 
     def set_default_headers(self):
         self.set_header("Access-Control-Allow-Origin", "*")
@@ -98,7 +105,9 @@ class HotaruCommands(tornado.web.RequestHandler):
         self.set_header('Access-Control-Allow-Methods', 'POST, DELETE')
 
     def post(self, cmd):
-        if cmd.startswith("createServer"):
+        if self._status_code == 400:
+            return
+        if cmd.endswith("createServer"):
             limit = int(self.get_argument("limit", -1))
             if limit < 0:
                 limit = -1
@@ -118,7 +127,9 @@ class HotaruCommands(tornado.web.RequestHandler):
             self.set_status(404)
 
     def delete(self, cmd):
-        if cmd.startswith("closeServer"):
+        if self._status_code == 400:
+            return
+        if cmd.endswith("closeServer"):
             server = self.application.pool.get_server_safe(
                 self.get_argument("code"))
             if server:
@@ -163,8 +174,10 @@ class HotaruWebsocket(tornado.websocket.WebSocketHandler):
         return (server, player_name, player, su)
 
     def open(self, client):
-        logging.debug("Handling request HotaruCommands/" +
-                      self.request.path)
+        logging.debug("Handling request HotaruWebsocket/" +
+                      self.path_args[0])
+        if not self.path_args[0] == HT_VERSION:
+            self.close(code=exceptions.BreakingApiChange())
 
         server, player_name, player, su = self.xtract_args()
 
