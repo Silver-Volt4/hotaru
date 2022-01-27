@@ -40,15 +40,12 @@ class Hotaru(tornado.web.Application):
         self.pool = ServerPool()
 
         handlers = [
-            ("/ws/(.*)", HotaruWebsocket,
-             {"pool": self.pool}),
-            ("/hotaru/(.*)",   HotaruCommands,
-             {"pool": self.pool}),
+            ("/ws/(.*)", HotaruWebsocket),
+            ("/hotaru/(.*)",   HotaruCommands)
         ]
         if do_inspect:
             handlers.append(
-                ("/inspect(.*)", HotaruInspector,
-                 {"pool": self.pool})
+                ("/inspect(.*)", HotaruInspector)
             )
 
         handlers.append(
@@ -76,7 +73,6 @@ class HotaruInspector(tornado.web.RequestHandler):
     """
 
     def initialize(self, pool):
-        self.pool = pool
         self.loader = tornado.template.Loader("./inspector")
 
     def set_default_headers(self):
@@ -93,12 +89,12 @@ class HotaruInspector(tornado.web.RequestHandler):
         cmd = cmd.split("/")[1:]
 
         if cmd[0] == "":
-            s = list(self.pool.pool.values())
+            s = list(self.application.pool.pool.values())
             self.write(self.loader.load(
                 "home.html").generate(a="x", servers=s))
 
         else:
-            serv = self.pool.get_server_safe(cmd[0])
+            serv = self.application.pool.get_server_safe(cmd[0])
             if serv:
                 pass  # TODO
             else:
@@ -111,9 +107,6 @@ class HotaruCommands(tornado.web.RequestHandler):
     Object for the /hotaru endpoint.
     This is where apps ask for new servers, delete them...
     """
-
-    def initialize(self, pool):
-        self.pool = pool
 
     def set_default_headers(self):
         self.set_header("Access-Control-Allow-Origin", "*")
@@ -141,7 +134,7 @@ class HotaruCommands(tornado.web.RequestHandler):
             if len(cmd) >= 3:
                 prefix = cmd[2]
 
-            server = self.pool.create_server(limit, prefix)
+            server = self.application.pool.create_server(limit, prefix)
             game_code = server.code
             su = server.su
             logging.info(f"Created new Server: {game_code}")
@@ -151,12 +144,12 @@ class HotaruCommands(tornado.web.RequestHandler):
             # Expected structure:
             # [1] = server code
             # [2] = su code for that server
-            server = self.pool.has_server_safe(cmd[1])
+            server = self.application.pool.has_server_safe(cmd[1])
             if server:
                 if server.su == cmd[2]:
                     server.close_server()
                     logging.info(f"Closed server: {server.code}")
-                    self.pool.free(server.code)
+                    self.application.pool.free(server.code)
                     self.set_status(200)
                     self.write("OK")
                 else:
@@ -172,9 +165,6 @@ class HotaruWebsocket(tornado.websocket.WebSocketHandler):
     Main object for the WebSocket endpoint itself.
     This is where actual communication happens.
     """
-
-    def initialize(self, pool):
-        self.pool = pool
 
     def check_origin(self, origin):
         # VERY UNSAFE. This should get a tweak as soon as possible!!!
@@ -192,16 +182,16 @@ class HotaruWebsocket(tornado.websocket.WebSocketHandler):
 
         command = Command()
         if len(cmd) == 4:  # Room admin connecting
-            command.server = self.pool.get_server_safe(cmd[0])
+            command.server = self.application.pool.get_server_safe(cmd[0])
             command.su_admin = cmd[3]
             command.player = command.server
         if len(cmd) == 3:  # Player REconnecting
-            command.server = self.pool.get_server_safe(cmd[0])
+            command.server = self.application.pool.get_server_safe(cmd[0])
             command.su = cmd[2]
             if command.server:
                 command.player = command.server.has_player_safe(cmd[1])
         if len(cmd) == 2:  # Player register
-            command.server = self.pool.get_server_safe(cmd[0])
+            command.server = self.application.pool.get_server_safe(cmd[0])
             command.join_request = cmd[1]
             if command.server:
                 command.player = command.server.has_player_safe(cmd[1])
