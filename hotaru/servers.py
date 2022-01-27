@@ -65,7 +65,7 @@ class Server(Player):
                 f"Server {self.code} tried to add player {player} but the name is taken. Did an earlier check fail?")
 
     # Check for a Player in PlayerPool, return None if not found
-    def has_player_safe(self, player_name):
+    def get_player_safe(self, player_name):
         if not player_name in self.players:
             return None
         else:

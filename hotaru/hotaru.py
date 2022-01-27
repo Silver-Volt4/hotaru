@@ -12,21 +12,6 @@ import logging
 import json
 
 
-class Command:
-    """
-    Class for holding information about the user
-    that connected / disconnected / sent a message
-    """
-
-    def __init__(self):
-        self.server = None
-        self.player = None
-        self.su = None
-
-        self.su_admin = None
-        self.join_request = None
-
-
 class Hotaru(tornado.web.Application):
     """
     Main object for the Tornado server.
@@ -38,11 +23,13 @@ class Hotaru(tornado.web.Application):
         # This allows to have separate ServerPools on different endpoints,
         # if that is desired.
         self.pool = ServerPool()
+        self.html = tornado.template.Loader("./html")
 
         handlers = [
-            ("/ws/(.*)", HotaruWebsocket),
+            ("/ws(.*)", HotaruWebsocket),
             ("/hotaru/(.*)",   HotaruCommands)
         ]
+
         if do_inspect:
             handlers.append(
                 ("/inspect(.*)", HotaruInspector)
@@ -59,11 +46,8 @@ class Hotaru(tornado.web.Application):
 
 
 class HotaruLanding(tornado.web.RequestHandler):
-    def initialize(self):
-        self.land = tornado.template.Loader("./inspector")
-
     def get(self, input):
-        self.write(self.land.load("landingpage.html").generate())
+        self.write(self.application.html.load("landingpage.html").generate())
 
 
 class HotaruInspector(tornado.web.RequestHandler):
@@ -71,9 +55,6 @@ class HotaruInspector(tornado.web.RequestHandler):
     Object for the optional Hotaru inspector.
     Currently lacks authentication, but it can be turned off.
     """
-
-    def initialize(self, pool):
-        self.loader = tornado.template.Loader("./inspector")
 
     def set_default_headers(self):
         self.set_header("Access-Control-Allow-Origin", "*")
@@ -90,7 +71,7 @@ class HotaruInspector(tornado.web.RequestHandler):
 
         if cmd[0] == "":
             s = list(self.application.pool.pool.values())
-            self.write(self.loader.load(
+            self.write(self.application.html.load(
                 "home.html").generate(a="x", servers=s))
 
         else:
@@ -108,56 +89,48 @@ class HotaruCommands(tornado.web.RequestHandler):
     This is where apps ask for new servers, delete them...
     """
 
+    def prepare(self):
+        logging.debug("Handling request HotaruCommands/" + self.path_args[0])
+
     def set_default_headers(self):
         self.set_header("Access-Control-Allow-Origin", "*")
         self.set_header("Access-Control-Allow-Headers", "x-requested-with")
-        self.set_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
+        self.set_header('Access-Control-Allow-Methods', 'POST, DELETE')
 
-    def get(self, cmd):
-        logging.debug("Handling request HotaruCommands/" + cmd)
-        # This might not be the best way to do it, but whatever...
-        cmd = cmd.split("/")
-
-        if cmd[0] == "create_room":
-            # Expected structure:
-            # [1] = max limit of players as an integer, anything negative means infinite, defaults to -1
-            # [2] = code prefix, defaults to none
-            limit = 0
-            try:
-                limit = int(cmd[1])
-                if limit < 0:
-                    limit = -1
-            except:
+    def post(self, cmd):
+        if cmd.startswith("createServer"):
+            limit = int(self.get_argument("limit", -1))
+            if limit < 0:
                 limit = -1
 
-            prefix = ""
-            if len(cmd) >= 3:
-                prefix = cmd[2]
+            prefix = self.get_argument("prefix", "")
 
             server = self.application.pool.create_server(limit, prefix)
             game_code = server.code
             su = server.su
             logging.info(f"Created new Server: {game_code}")
-            self.write("\n".join((game_code[-4:], su)))
+            self.set_status(201)
+            self.write({
+                "c": game_code[-4:],
+                "su": su
+            })
+        else:
+            self.set_status(404)
 
-        if cmd[0] == "close_room":
-            # Expected structure:
-            # [1] = server code
-            # [2] = su code for that server
-            server = self.application.pool.has_server_safe(cmd[1])
+    def delete(self, cmd):
+        if cmd.startswith("closeServer"):
+            server = self.application.pool.get_server_safe(
+                self.get_argument("code"))
             if server:
-                if server.su == cmd[2]:
+                if server.su == self.get_argument("su"):
                     server.close_server()
                     logging.info(f"Closed server: {server.code}")
                     self.application.pool.free(server.code)
                     self.set_status(200)
-                    self.write("OK")
                 else:
                     self.set_status(401)
-                    self.write("Unauthorized")
             else:
                 self.set_status(404)
-                self.write("Not found")
 
 
 class HotaruWebsocket(tornado.websocket.WebSocketHandler):
@@ -174,128 +147,117 @@ class HotaruWebsocket(tornado.websocket.WebSocketHandler):
         # Non-None enables compression with default options
         return {}
 
-    def parse_cmd(self, cmd):
-        # Here, we create a command object for the respective access URL
-        # Hotaru depends on it in a sense
+    def xtract_args(self):
+        code = self.get_argument("code")
+        server = self.application.pool.get_server_safe(code)
 
-        cmd[1] = tornado.escape.url_unescape(cmd[1], plus=False)
+        player_name = self.get_argument("name", None)
+        player = None
+        if server and player_name:
+            player = server.get_player_safe(player_name)
 
-        command = Command()
-        if len(cmd) == 4:  # Room admin connecting
-            command.server = self.application.pool.get_server_safe(cmd[0])
-            command.su_admin = cmd[3]
-            command.player = command.server
-        if len(cmd) == 3:  # Player REconnecting
-            command.server = self.application.pool.get_server_safe(cmd[0])
-            command.su = cmd[2]
-            if command.server:
-                command.player = command.server.has_player_safe(cmd[1])
-        if len(cmd) == 2:  # Player register
-            command.server = self.application.pool.get_server_safe(cmd[0])
-            command.join_request = cmd[1]
-            if command.server:
-                command.player = command.server.has_player_safe(cmd[1])
+        su = self.get_argument("su", None)
+        if su and not player_name:
+            player = server
 
-        # len(cmd) == 1 should never happen.
-
-        return command
+        return (server, player_name, player, su)
 
     def open(self, client):
         logging.debug("Handling request HotaruCommands/" +
                       self.request.path)
-        cmd = self.parse_cmd(self.request.path.split("/")[2:])
+
+        server, player_name, player, su = self.xtract_args()
 
         # Check for errors in the connection and kick the client if necessary
 
-        if not cmd.server:
+        if not server:
             self.close(code=exceptions.ServerCodeDoesntExist())
+            return
 
-        elif cmd.join_request and cmd.server.lock:
-            self.close(code=exceptions.ServerIsLocked())
+        registering = player_name and not su
+        logging_in = player_name and su
+        owner_connecting = su and not player_name
 
-        elif cmd.join_request and cmd.server.players.count() == cmd.server.limit:
-            self.close(code=exceptions.RoomLimitReached())
+        if registering:
+            if server.lock:
+                self.close(code=exceptions.ServerIsLocked())
 
-        # In this section, we might have got a player trying to register
-        elif cmd.join_request and not cmd.server.lock:
+            elif server.players.count() == server.limit:
+                self.close(code=exceptions.RoomLimitReached())
 
-            if cmd.join_request and cmd.player:
+            elif player:
                 self.close(code=exceptions.NameIsTaken())
 
-            # If the name property isn't empty, we're safe
-            elif cmd.join_request != "":
-                p = Player(cmd.join_request, self)
-                cmd.server.add_user(p)
-                cmd.player = p
+            elif player_name == "":
+                self.close(code=exceptions.NamePropertyIsEmpty())
+
+            else:
+                p = Player(player_name, self)
+                server.add_user(p)
                 su_message = messages.Su(p.su)
                 p.write_message(su_message)
 
-                for pb in cmd.server.messages_public:
+                for pb in server.messages_public:
                     p.messages.append(pb)
                     p.next += 1
 
                 append = messages.UserAppend(p)
-                cmd.server.write_message(append)
+                server.write_message(append)
 
-            else:
-                self.close(code=exceptions.NamePropertyIsEmpty())
-
-        # In this section, we might have got a registered player trying to reconnect
-        elif cmd.su:
-            if not cmd.player:
+        elif logging_in:
+            if not player:
                 self.close(code=exceptions.NameDoesntExist())
 
-            if cmd.player.su != cmd.su:
+            elif player.su != su:
                 self.close(code=exceptions.SuCodeMismatch())
 
             # The player name exists and the code is correct
-            if cmd.player.su == cmd.su:
+            elif player.su == su:
                 try:
-                    cmd.player.client.close(code=exceptions.Overridden())
+                    player.client.close(code=exceptions.Overridden())
                 except:
                     pass
-                cmd.player.client = self
+                player.client = self
 
-                join = messages.UserJoin(cmd.player)
-                cmd.server.write_message(join)
+                join = messages.UserJoin(player)
+                server.write_message(join)
 
-        # In this section, we might have got the server creator connecting
-        elif cmd.su_admin:
-            if cmd.server.su != cmd.su_admin:
+        elif owner_connecting:
+            if server.su != su:
                 self.close(code=exceptions.SuAdminCodeMismatch())
 
             # The code checks out
             else:
                 try:
-                    cmd.server.client.close(code=exceptions.Overridden())
+                    server.client.close(code=exceptions.Overridden())
                 except:
                     pass
-                cmd.server.client = self
+                server.client = self
 
     # We notify the server owner about the disconnection
     def on_connection_close(self):
-        cmd = self.parse_cmd(self.request.path.split("/")[2:])
         if self.close_code:
             if self.close_code != 1000 and self.close_code < 4000:
-                if cmd.player:
-                    left = messages.UserLeft(cmd.player)
-                    cmd.server.write_message(left)
+                server, player_name, player, su = self.xtract_args()
+                if server and player:
+                    left = messages.UserLeft(player)
+                    server.write_message(left)
 
     # Responsible for delivering messages
-    def message_send_shorthand(self, cmd, actual_message):
+    def _send_message(self, server, player, actual_message):
         if actual_message["to"] == 1:
-            recipient = cmd.server
+            recipient = server
         elif actual_message["to"] == 2:
-            recipient = cmd.server.players
+            recipient = server.players
         else:
-            recipient = cmd.server.has_player_safe(actual_message["to"])
+            recipient = server.get_player_safe(actual_message["to"])
 
-        msg = messages.RawMessage(cmd.player, actual_message["content"])
-        cmd.player.sends_message(recipient, msg)
+        msg = messages.RawMessage(player, actual_message["content"])
+        player.sends_message(recipient, msg)
 
         if actual_message["to"] == 2:
-            cmd.player.sends_message(cmd.server, msg, True)
-            cmd.server.messages_public.append(msg)
+            player.sends_message(server, msg, True)
+            server.messages_public.append(msg)
 
     # Fires when a WS packet is received
     def on_message(self, message, *args):
@@ -306,39 +268,39 @@ class HotaruWebsocket(tornado.websocket.WebSocketHandler):
         if len(message) <= 1:
             return
 
-        cmd = self.parse_cmd(self.request.path.split("/")[2:])
+        server, player_name, player, su = self.xtract_args()
 
         message_command = message.split(" ")[0]
         actual_message = json.loads(" ".join(message.split(" ")[1:]))
 
-        # cmd.player.name is a 1 integer only if it's sent by the server owner,
+        # player.name is a 1 only if it's sent by the server owner,
         # see servers.py. This is for legacy reasons and how Hotaru was implemented
         # before the rewrite and open-sourcing.
-        if message_command == "lock" and cmd.player.name == 1:
-            cmd.server.lock = True
+        if message_command == "lock" and player.name == 1:
+            server.lock = True
 
-        if message_command == "unlock" and cmd.player.name == 1:
-            cmd.server.lock = False
+        if message_command == "unlock" and player.name == 1:
+            server.lock = False
 
         # Send a message.
         if message_command == "chat":
-            self.message_send_shorthand(cmd, actual_message)
+            self._send_message(server, player, actual_message)
 
         # Identical behavior to sending multiple "chat" commands with different contents.
         # Instead, the content is an array of what we would have sent individually
         elif message_command == "chats":
             for ms in actual_message:
-                self.message_send_shorthand(cmd, ms)
+                self._send_message(server, player, ms)
 
         # Have you lost a packet? Does your "q" number not match? Fear not, for we have a solution!
         # Call 1-800-REPEAT to receive a copy of all messages that have been sent to you after a specified packet!
         elif message_command == "repeat":
             try:
-                cmd.player.client.write_message(json.dumps(
+                player.client.write_message(json.dumps(
                     {
                         "type": "repeated",
                         "start": actual_message,
-                        "repeat": cmd.player.generate_repeat(actual_message)
+                        "repeat": player.generate_repeat(actual_message)
                     }, ensure_ascii=False))
             except:
                 pass
