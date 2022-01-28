@@ -3,13 +3,13 @@ import tornado.template
 import tornado.web
 import tornado.websocket
 
-from hotaru import messages
-from hotaru import exceptions
+from hotaru import messages, ratelimiting, exceptions
 from hotaru.servers import ServerPool
 from hotaru.players import Player
 
 import logging
 import json
+import time
 
 HT_VERSION = "v0"
 
@@ -19,9 +19,15 @@ class Hotaru(tornado.web.Application):
     Main object for the Tornado server.
     """
 
-    def __init__(self, do_inspect):
+    def __init__(self, do_inspect, **kwargs):
         self.pool = ServerPool()
         self.html = tornado.template.Loader("./html")
+
+        self.rate_limits = ratelimiting.RoomCreateLimiting()
+
+        self.MAX_USERS = kwargs.get("max_users", 3)
+        self.PER_N_SECONDS = kwargs.get("per_n_seconds", 1)
+        self.BAN_FOR = kwargs.get("ban_for", 200)
 
         handlers = [
             ("/ws/(.*)", HotaruWebsocket),
@@ -104,21 +110,28 @@ class HotaruCommands(tornado.web.RequestHandler):
         if self._status_code == 400:
             return
         if cmd.endswith("createServer"):
-            limit = int(self.get_argument("limit", -1))
-            if limit < 0:
-                limit = -1
+            if self.application.rate_limits.check_ip_owns(self.request.remote_ip) >= 3:
+                self.write({
+                    "error": "you have reached the limit of rooms for your IP address. please remove other servers first"
+                })
+            else:
+                limit = int(self.get_argument("limit", -1))
+                if limit < 0:
+                    limit = -1
 
-            prefix = self.get_argument("prefix", "")
+                prefix = self.get_argument("prefix", "")
 
-            server = self.application.pool.create_server(limit, prefix)
-            game_code = server.code
-            su = server.su
-            logging.info(f"Created new Server: {game_code}")
-            self.set_status(201)
-            self.write({
-                "c": game_code[-4:],
-                "su": su
-            })
+                server = self.application.pool.create_server(limit, prefix)
+                game_code = server.code
+                su = server.su
+                server.owner_ip = self.request.remote_ip
+                logging.info(f"Created new Server: {game_code}")
+                self.application.rate_limits.ip_own(server.owner_ip)
+                self.set_status(201)
+                self.write({
+                    "c": game_code[-4:],
+                    "su": su
+                })
         else:
             self.set_status(404)
 
@@ -130,6 +143,7 @@ class HotaruCommands(tornado.web.RequestHandler):
                 self.get_argument("code"))
             if server:
                 if server.su == self.get_argument("su"):
+                    self.application.rate_limits.ip_deown(server.owner_ip)
                     server.close_server()
                     logging.info(f"Closed server: {server.code}")
                     self.application.pool.free(server.code)
@@ -201,6 +215,34 @@ class HotaruWebsocket(tornado.websocket.WebSocketHandler):
                 self.close(code=exceptions.NamePropertyIsEmpty())
 
             else:
+                # Check for spam and ban if necessary
+
+                request_time = time.time()
+                ratelimit = server.rate_limit.get_ratelimit_data(
+                    self.request.remote_ip)
+
+                if request_time > ratelimit.banned_until:
+                    ratelimit.banned_until = 0
+                    logging.debug("Lift ban")
+                else:
+                    self.close(code=exceptions.BannedByRateLimit())
+                    return
+
+                if request_time - ratelimit.striking_test < self.application.PER_N_SECONDS:
+                    ratelimit.strike += 1
+                    logging.debug("Award strike")
+                    if ratelimit.strike >= self.application.MAX_USERS:
+                        ratelimit.banned_until = request_time + self.application.BAN_FOR
+                        logging.debug("Issue ban for a spammer")
+                        self.close(code=exceptions.BannedByRateLimit())
+                        return
+                else:
+                    ratelimit.strike = 0
+                    ratelimit.striking_test = request_time
+                    logging.debug("Reset strikes")
+
+                # Add player
+
                 p = Player(player_name, self)
                 server.add_user(p)
                 su_message = messages.Su(p.su)

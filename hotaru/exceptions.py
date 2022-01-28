@@ -59,3 +59,6 @@ def BreakingApiChange():
 def ServerClosing():
     logging.debug(f"exception: ServerClosing")
     return 4000 + 20
+
+def BannedByRateLimit():
+    return 4000 + 30

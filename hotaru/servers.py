@@ -1,5 +1,5 @@
 import logging
-from hotaru import exceptions
+from hotaru import exceptions, ratelimiting
 from hotaru.players import Player
 import uuid
 import random
@@ -52,6 +52,9 @@ class Server(Player):
         self.next = 0
         self.lock = False
         self.limit = limit
+
+        self.owner_ip = None
+        self.rate_limit = ratelimiting.RoomJoinLimiting()
 
         logging.debug(f"Initialized new Server instance: {self.code}")
 
