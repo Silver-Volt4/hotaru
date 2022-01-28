@@ -20,10 +20,6 @@ class Hotaru(tornado.web.Application):
     """
 
     def __init__(self, do_inspect):
-        # A reference to this object is passed to all handlers.
-        # The ServerPool object holds Server objects, which hold Player objects.
-        # This allows to have separate ServerPools on different endpoints,
-        # if that is desired.
         self.pool = ServerPool()
         self.html = tornado.template.Loader("./html")
 
