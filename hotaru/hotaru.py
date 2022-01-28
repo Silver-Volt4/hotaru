@@ -25,6 +25,8 @@ class Hotaru(tornado.web.Application):
 
         self.rate_limits = ratelimiting.RoomCreateLimiting()
 
+        self.MAX_SERVERS = kwargs.get("max_servers", 3)
+
         self.MAX_USERS = kwargs.get("max_users", 3)
         self.PER_N_SECONDS = kwargs.get("per_n_seconds", 1)
         self.BAN_FOR = kwargs.get("ban_for", 200)
@@ -110,7 +112,7 @@ class HotaruCommands(tornado.web.RequestHandler):
         if self._status_code == 400:
             return
         if cmd.endswith("createServer"):
-            if self.application.rate_limits.check_ip_owns(self.request.remote_ip) >= 3:
+            if self.application.rate_limits.check_ip_owns(self.request.remote_ip) >= self.application.MAX_SERVERS:
                 self.write({
                     "error": "you have reached the limit of rooms for your IP address. please remove other servers first"
                 })
