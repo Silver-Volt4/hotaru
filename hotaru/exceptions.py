@@ -50,9 +50,11 @@ def Overridden():
     logging.debug(f"exception: Overridden")
     return 4000 + 10
 
+
 def BreakingApiChange():
     logging.debug(f"exception: BreakingApiChange")
     return 4000 + 19
+
 
 def ServerClosing():
     logging.debug(f"exception: ServerClosing")
