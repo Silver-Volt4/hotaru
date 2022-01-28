@@ -85,7 +85,7 @@ class Server(Player):
             self.client.close(exceptions.ServerClosing())
         except:
             logging.debug(
-                f"Couldn't close connection with {player.name}, the user is likely away.")
+                f"Couldn't close connection with server's owner, the user is likely away.")
 
 
 class ServerPool:
